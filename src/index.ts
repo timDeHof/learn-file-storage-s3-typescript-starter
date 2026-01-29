@@ -1,4 +1,5 @@
 import { cfg } from "./config";
+import { seedTestUser } from "./db/db";
 import { handlerLogin, handlerRefresh, handlerRevoke } from "./api/auth";
 import {
   errorHandlingMiddleware,
@@ -19,6 +20,9 @@ import { ensureAssetsDir } from "./api/assets";
 import spa from "./app/index.html";
 
 ensureAssetsDir(cfg);
+
+// Seed test user for bootdev tests
+await seedTestUser(cfg.db, "admin@tubely.com", "password");
 
 Bun.serve({
   port: Number(cfg.port),
@@ -65,7 +69,7 @@ Bun.serve({
 
     if (path.startsWith("/assets")) {
       return cacheMiddleware(() =>
-        serveStaticFile(path.replace("/assets/", ""), cfg.assetsRoot)
+        serveStaticFile(path.replace("/assets/", ""), cfg.assetsRoot),
       )(req);
     }
 

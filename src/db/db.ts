@@ -1,4 +1,6 @@
 import { Database } from "bun:sqlite";
+import { hashPassword } from "../auth";
+import { randomUUID } from "crypto";
 
 export function newDatabase(pathToDB: string): Database {
   const db = new Database(pathToDB);
@@ -51,4 +53,25 @@ export function reset(db: Database) {
   db.exec("DELETE FROM refresh_tokens");
   db.exec("DELETE FROM users");
   db.exec("DELETE FROM videos");
+}
+
+export async function seedTestUser(
+  db: Database,
+  email: string,
+  password: string,
+): Promise<void> {
+  // Check if user already exists
+  const existingUser = db
+    .query("SELECT * FROM users WHERE email = ?")
+    .get(email);
+  if (existingUser) {
+    return undefined;
+  }
+  // Create test user with hashed password
+  const hashedPassword = await hashPassword(password);
+  const newID = randomUUID();
+  db.run(
+    "INSERT INTO users (id, created_at, updated_at, email, password) VALUES (?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, ?, ?)",
+    [newID, email, hashedPassword],
+  );
 }

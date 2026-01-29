@@ -66,6 +66,7 @@ export function createVideo(
   params: CreateVideoParams,
 ): Video | undefined {
   const id = randomUUID();
+  const thumbnailURL = `/api/thumbnails/${id}`;
 
   const sql = `
     INSERT INTO videos (
@@ -74,13 +75,20 @@ export function createVideo(
       updated_at,
       title,
       description,
+      thumbnail_url,
       user_id
     ) VALUES (
-      ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, ?, ?, ?
+      ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, ?, ?, ?, ?
     )
   `;
 
-  db.run(sql, [id, params.title, params.description, params.userID]);
+  db.run(sql, [
+    id,
+    params.title,
+    params.description,
+    thumbnailURL,
+    params.userID,
+  ]);
 
   return getVideo(db, id);
 }
