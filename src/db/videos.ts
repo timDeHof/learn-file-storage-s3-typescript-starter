@@ -66,7 +66,7 @@ export function createVideo(
   params: CreateVideoParams,
 ): Video | undefined {
   const id = randomUUID();
-  const thumbnailURL = `/api/thumbnails/${id}`;
+  const thumbnailURL = ""; // Will be replaced with base64 data URL when thumbnail is uploaded
 
   const sql = `
     INSERT INTO videos (
