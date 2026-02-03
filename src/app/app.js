@@ -141,14 +141,14 @@ async function uploadThumbnail(videoID) {
       },
       body: formData,
     });
+    const data = await res.json();
     if (!res.ok) {
-      const data = await res.json();
       throw new Error(`Failed to upload thumbnail. Error: ${data.error}`);
     }
 
-    await res.json();
+    // Update the current video with the returned data (which includes thumbnailURL)
+    viewVideo(data);
     console.log("Thumbnail uploaded!");
-    await getVideo(videoID);
   } catch (error) {
     alert(`Error: ${error.message}`);
   }
@@ -174,13 +174,14 @@ async function uploadVideoFile(videoID) {
       },
       body: formData,
     });
+    const data = await res.json();
     if (!res.ok) {
-      const data = await res.json();
       throw new Error(`Failed to upload video file. Error: ${data.error}`);
     }
 
+    // Update the current video with the returned data (which includes videoURL)
+    viewVideo(data);
     console.log("Video uploaded!");
-    await getVideo(videoID);
   } catch (error) {
     alert(`Error: ${error.message}`);
   }
