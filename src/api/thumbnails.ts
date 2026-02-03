@@ -1,10 +1,10 @@
 import { getBearerToken, validateJWT } from "../auth";
+import { getAssetDiskPath, getInMemoryURL, getAssetPath } from "./assets";
 import { respondWithJSON } from "./json";
 import { getVideo, updateVideo } from "../db/videos";
 import type { ApiConfig } from "../config";
 import type { BunRequest } from "bun";
 import { BadRequestError, NotFoundError, UserForbiddenError } from "./errors";
-import path from "node:path";
 
 export async function handlerUploadThumbnail(cfg: ApiConfig, req: BunRequest) {
   const { videoId } = req.params as { videoId?: string };
@@ -22,7 +22,6 @@ export async function handlerUploadThumbnail(cfg: ApiConfig, req: BunRequest) {
   if (video.userID !== userID) {
     throw new UserForbiddenError("Not authorized to update this video");
   }
-
   const formData = await req.formData();
   const file = formData.get("thumbnail");
   if (!(file instanceof File)) {
@@ -36,28 +35,19 @@ export async function handlerUploadThumbnail(cfg: ApiConfig, req: BunRequest) {
       `Thumbnail file exceeds the maximum allowed size of 10MB`,
     );
   }
-
   const mediaType = file.type;
-  if (!mediaType) {
-    throw new BadRequestError("Missing Content-Type for thumbnail");
+  if (mediaType !== "image/jpeg" && mediaType !== "image/png") {
+    throw new BadRequestError("Invalid file type. Only JPEG and PNG allowed.");
   }
 
-  // Get file extension from the media type
-  const extension = mediaType.split("/")[1] || "bin";
+  const assetPath = getAssetPath(mediaType);
+  const assetDiskPath = getAssetDiskPath(cfg, assetPath);
 
-  // Construct the file path: /assets/<videoID>.<file_extension>
-  const filePath = path.join(cfg.assetsRoot, `${videoId}.${extension}`);
+  await Bun.write(assetDiskPath, file);
 
-  // Write the file directly to the file system
-  const arrayBuffer = await file.arrayBuffer();
-  if (!arrayBuffer) {
-    throw new Error("Error reading file data");
-  }
-
-  await Bun.write(filePath, arrayBuffer);
-
+  const urlPath = getInMemoryURL(cfg, assetPath);
   // Store the URL pointing to the file in the database
-  video.thumbnailURL = `http://localhost:${cfg.port}/assets/${videoId}.${extension}`;
+  video.thumbnailURL = urlPath;
   updateVideo(cfg.db, video);
   console.log("Saved thumbnail for video", video);
 
