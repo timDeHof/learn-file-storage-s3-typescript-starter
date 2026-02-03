@@ -42,7 +42,7 @@ function autoMigrate(db: Database) {
 		description TEXT,
 		thumbnail_url TEXT,
 		video_url TEXT TEXT,
-		user_id INTEGER,
+		user_id TEXT,
 		FOREIGN KEY(user_id) REFERENCES users(id)
 	);
 	`;
@@ -59,19 +59,51 @@ export async function seedTestUser(
   db: Database,
   email: string,
   password: string,
-): Promise<void> {
+): Promise<string | undefined> {
   // Check if user already exists
-  const existingUser = db
-    .query("SELECT * FROM users WHERE email = ?")
-    .get(email);
-  if (existingUser) {
-    return undefined;
+  interface UserRow {
+    id: string;
   }
-  // Create test user with hashed password
-  const hashedPassword = await hashPassword(password);
-  const newID = randomUUID();
-  db.run(
-    "INSERT INTO users (id, created_at, updated_at, email, password) VALUES (?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, ?, ?)",
-    [newID, email, hashedPassword],
-  );
+  const existingUser = db
+    .query<UserRow, [string]>("SELECT id FROM users WHERE email = ?")
+    .get(email);
+
+  let userID: string;
+
+  if (existingUser) {
+    userID = existingUser.id;
+  } else {
+    // Create test user with hashed password
+    const hashedPassword = await hashPassword(password);
+    userID = randomUUID();
+    db.run(
+      "INSERT INTO users (id, created_at, updated_at, email, password) VALUES (?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, ?, ?)",
+      [userID, email, hashedPassword],
+    );
+  }
+
+  // Always seed test videos for this user (to ensure test data exists)
+  const testVideos = [
+    {
+      title: "Test Video 1",
+      description: "A test video for bootdev tests",
+      thumbnail_url: "https://example.com/thumb1.jpg",
+    },
+    {
+      title: "Test Video 2",
+      description: "Another test video",
+      thumbnail_url: "https://example.com/thumb2.jpg",
+    },
+  ];
+
+  for (const video of testVideos) {
+    const videoID = randomUUID();
+    // Use INSERT OR IGNORE to avoid duplicates
+    db.run(
+      "INSERT OR IGNORE INTO videos (id, created_at, updated_at, title, description, thumbnail_url, user_id) VALUES (?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, ?, ?, ?, ?)",
+      [videoID, video.title, video.description, video.thumbnail_url, userID],
+    );
+  }
+
+  return userID;
 }
