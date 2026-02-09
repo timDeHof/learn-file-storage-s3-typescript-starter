@@ -17,6 +17,13 @@ export async function handlerUploadVideo(
     throw new BadRequestError("Invalid video ID");
   }
 
+  // Validate videoId is a valid UUID
+  const uuidRegex =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (!uuidRegex.test(videoId)) {
+    throw new BadRequestError("Invalid video ID format");
+  }
+
   const token = getBearerToken(req.headers);
   const userID = validateJWT(token, cfg.jwtSecret);
 
@@ -34,29 +41,73 @@ export async function handlerUploadVideo(
     throw new BadRequestError("Video file missing");
   }
 
-  const MAX_UPLOAD_SIZE = 100 << 20; // 100MB
+  // 1GB upload size limit (1 << 30 bytes)
+  const MAX_UPLOAD_SIZE = 1 << 30;
 
   if (file.size > MAX_UPLOAD_SIZE) {
     throw new BadRequestError(
-      `Video file exceeds the maximum allowed size of 100MB`,
+      `Video file exceeds the maximum allowed size of 1GB`,
     );
   }
 
-  const randomFilename = randomBytes(32).toString("base64url");
+  // Validate that the uploaded file is an MP4 video
   const mediaType = file.type;
-  const extension = mediaType.split("/")[1] || "bin";
-
-  const filePath = path.join(cfg.assetsRoot, `${randomFilename}.${extension}`);
-
-  const arrayBuffer = await file.arrayBuffer();
-  if (!arrayBuffer) {
-    throw new Error("Error reading file data");
+  if (mediaType !== "video/mp4") {
+    throw new BadRequestError(
+      "Invalid file type. Only MP4 videos are allowed.",
+    );
   }
 
-  await Bun.write(filePath, arrayBuffer);
+  // Generate unique file key for S3 (32-byte hex + .mp4 extension)
+  const randomHex = randomBytes(32).toString("hex");
+  const fileKey = `${randomHex}.mp4`;
 
-  video.videoURL = `http://localhost:${cfg.port}/assets/${randomFilename}.${extension}`;
-  updateVideo(cfg.db, video);
+  // Create temporary file path
+  const tempFilePath = path.join(process.env.TMPDIR || "/tmp", fileKey);
 
-  return respondWithJSON(200, video);
+  let tempFileCreated = false;
+  try {
+    // Save uploaded file to temporary file
+    await Bun.write(tempFilePath, file);
+    tempFileCreated = true;
+    console.log(`Saved video to temporary file: ${tempFilePath}`);
+
+    // Upload to S3 using S3Client.file()
+    // @ts-expect-error - Bun types may not include all options, but runtime supports bucket
+    await cfg.s3Client.file(fileKey, Bun.file(tempFilePath), {
+      bucket: cfg.s3Bucket,
+      contentType: "video/mp4",
+    });
+    console.log(`Uploaded video to S3: ${fileKey}`);
+
+    // Generate presigned URL for private S3 access (expires in 24 hours)
+    // Presigned URLs contain amazonaws.com and work with AWS credentials
+    const presignedUrl = await cfg.s3Client.presign(fileKey, {
+      bucket: cfg.s3Bucket,
+      region: cfg.s3Region,
+      expiresIn: 60 * 60 * 24, // 24 hours
+    });
+    console.log(`Generated presigned URL for video`);
+
+    // Update database with presigned URL, file size, and content type
+    video.videoURL = presignedUrl;
+    video.fileSize = file.size;
+    video.contentType = mediaType;
+    updateVideo(cfg.db, video);
+    console.log(
+      "Updated video record with presigned URL, file size, and content type",
+    );
+
+    return respondWithJSON(200, video);
+  } finally {
+    // Clean up temporary file even if errors occur
+    if (tempFileCreated) {
+      try {
+        await Bun.file(tempFilePath).delete();
+        console.log(`Cleaned up temporary file: ${tempFilePath}`);
+      } catch (cleanupError) {
+        console.error(`Failed to clean up temporary file: ${cleanupError}`);
+      }
+    }
+  }
 }
